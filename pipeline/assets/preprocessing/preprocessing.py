@@ -1,8 +1,9 @@
-"""Clean forklift load sensor data (single run, no parameters).
+"""Stage 2 preprocessing: apply load mask to cleaned forklifts and prepare splits.
 
-- Input: height-cleaned forklift files in ``cleaned_data/`` (from clean_data.py).
-- Output: load-cleaned files in ``load_cleaned_data/`` with `Load_Cleaned` and updated
-  `LoadChange` columns plus a fleet summary CSV.
+- Reads height-cleaned forklifts from ``cleaned_data/`` (skips broken height files).
+- Applies height/speed filters and short/long event removal to produce ``Load_Cleaned``.
+- Writes per-file outputs to ``load_cleaned_data/`` and a summary CSV.
+- Concatenates all cleaned frames and writes stratified train/test splits to ``load_cleaned_data/splits/``.
 """
 
 from __future__ import annotations
@@ -10,21 +11,15 @@ from __future__ import annotations
 from pathlib import Path
 
 import pandas as pd
+from sklearn.model_selection import train_test_split
 
-INPUT_DIR = Path(__file__).parent / "cleaned_data"
-OUTPUT_DIR = Path(__file__).parent / "load_cleaned_data"
+INPUT_DIR = Path(__file__).resolve().parents[3] / "cleaned_data"
+OUTPUT_DIR = Path(__file__).resolve().parents[3] / "load_cleaned_data"
 
 MIN_LOAD_DURATION = 30  # seconds
-MAX_LOAD_DURATION = 7200  # seconds (2 hours)
+MAX_LOAD_DURATION = 7200  # seconds
 MIN_HEIGHT_THRESHOLD = 0.05  # meters
 MIN_SPEED_FOR_FILTERING = 15  # km/h
-
-
-def load_files(data_dir: Path) -> list[Path]:
-    files = sorted(p for p in data_dir.glob("*_forklift.csv") if "_broken_height" not in p.name)
-    if not files:
-        raise FileNotFoundError(f"No *_forklift.csv files found in {data_dir}")
-    return files
 
 
 def detect_load_events(df: pd.DataFrame) -> list[dict]:
@@ -66,7 +61,7 @@ def detect_load_events(df: pd.DataFrame) -> list[dict]:
     return events
 
 
-def clean_file(csv_path: Path) -> dict:
+def clean_file(csv_path: Path) -> tuple[dict, pd.DataFrame]:
     df = pd.read_csv(csv_path)
     required = {"Timestamp", "Height", "Load", "Speed"}
     if not required.issubset(df.columns):
@@ -95,9 +90,7 @@ def clean_file(csv_path: Path) -> dict:
             df.loc[event["start_idx"] : event["end_idx"], "Load_Cleaned"] = 0
             long_events_filtered += 1
 
-    # recompute events after cleaning so stats reflect final Load_Cleaned
     final_events = detect_load_events(df)
-
     df["LoadChange"] = df["Load_Cleaned"].diff()
 
     original_count = len(df)
@@ -107,9 +100,10 @@ def clean_file(csv_path: Path) -> dict:
     records_changed = int((df["Load"] != df["Load_Cleaned"]).sum())
 
     output_path = OUTPUT_DIR / csv_path.name.replace("_forklift", "_forklift_load_cleaned")
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
     df.to_csv(output_path, index=False)
 
-    return {
+    stats = {
         "ForkliftID": csv_path.stem.replace("_forklift", ""),
         "Original_Records": original_count,
         "Original_Loaded": original_loaded,
@@ -125,42 +119,41 @@ def clean_file(csv_path: Path) -> dict:
         "Valid_Load_Events": len(final_events),
         "OutputFile": output_path.name,
     }
+    return stats, df
 
 
 def run() -> None:
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    files = sorted(
+        p for p in INPUT_DIR.glob("*_forklift.csv") if "_broken_height" not in p.name
+    )
+    if not files:
+        raise FileNotFoundError(f"No *_forklift.csv files found in {INPUT_DIR}")
+
     stats = []
-
-    for csv_path in load_files(INPUT_DIR):
-        try:
-            stats.append(clean_file(csv_path))
-            print(f"Cleaned {csv_path.name}")  # noqa: T201
-        except Exception as exc:  # noqa: BLE001
-            print(f"Error processing {csv_path.name}: {exc}")  # noqa: T201
-
-    if not stats:
-        print("No files cleaned.")  # noqa: T201
-        return
+    cleaned_frames: list[pd.DataFrame] = []
+    for csv_path in files:
+        file_stats, cleaned_df = clean_file(csv_path)
+        stats.append(file_stats)
+        cleaned_frames.append(cleaned_df)
+        print(f"Cleaned {csv_path.name}")  # noqa: T201
 
     stats_df = pd.DataFrame(stats)
     summary_path = OUTPUT_DIR / "cleaning_summary.csv"
     stats_df.to_csv(summary_path, index=False)
-
-    total_original_records = int(stats_df["Original_Records"].sum())
-    total_records_changed = int(stats_df["Records_Changed"].sum())
-    total_original_loaded = int(stats_df["Original_Loaded"].sum())
-    total_final_loaded = int(stats_df["Final_Loaded"].sum())
-    total_filtered = int(stats_df["Total_Filtered"].sum())
-    total_valid_events = int(stats_df["Valid_Load_Events"].sum())
-
-    print(
-        f"Summary: {len(stats)} files, records changed {total_records_changed}/{total_original_records} "
-        f"({(total_records_changed/total_original_records*100) if total_original_records else 0:.2f}%), "
-        f"filtered loaded {total_filtered}/{total_original_loaded if total_original_loaded else 0} "
-        f"({(total_filtered/total_original_loaded*100) if total_original_loaded else 0:.1f}%), "
-        f"valid events {total_valid_events}"
-    )  # noqa: T201
     print(f"Saved summary to {summary_path}")  # noqa: T201
+
+    if cleaned_frames:
+        combined = pd.concat(cleaned_frames, ignore_index=True)
+        train_df, test_df = train_test_split(
+            combined,
+            test_size=0.2,
+            random_state=42,
+            stratify=combined["Load_Cleaned"],
+        )
+        (OUTPUT_DIR / "splits").mkdir(parents=True, exist_ok=True)
+        train_df.to_csv(OUTPUT_DIR / "splits" / "train.csv", index=False)
+        test_df.to_csv(OUTPUT_DIR / "splits" / "test.csv", index=False)
+        print(f"Wrote train/test splits to {OUTPUT_DIR / 'splits'}")  # noqa: T201
 
 
 if __name__ == "__main__":

@@ -13,12 +13,16 @@ import pandas as pd
 import seaborn as sns
 import xgboost as xgb
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
-from sklearn.model_selection import train_test_split
+import mlflow
 
-DATA_DIR = Path(__file__).parent / "load_cleaned_data"
-ARTIFACT_DIR = Path(__file__).parent / "artifacts"
+ROOT_DIR = Path(__file__).resolve().parents[3]
+DATA_DIR = ROOT_DIR / "load_cleaned_data"
+SPLITS_DIR = DATA_DIR / "splits"
+ARTIFACT_DIR = ROOT_DIR / "artifacts"
 MODEL_PATH = ARTIFACT_DIR / "xgboost_load_model.json"
 PLOT_PATH = ARTIFACT_DIR / "load_prediction_results.png"
+MLFLOW_URI = (ARTIFACT_DIR / "mlruns").as_uri()
+EXPERIMENT_NAME = "forklift_load_prediction"
 
 
 def load_dataset(data_dir: Path) -> pd.DataFrame:
@@ -36,6 +40,14 @@ def load_dataset(data_dir: Path) -> pd.DataFrame:
     if combined.empty:
         raise ValueError("Combined dataset is empty after loading files.")
     return combined
+
+
+def load_splits() -> tuple[pd.DataFrame, pd.DataFrame]:
+    train_path = SPLITS_DIR / "train.csv"
+    test_path = SPLITS_DIR / "test.csv"
+    if train_path.exists() and test_path.exists():
+        return pd.read_csv(train_path), pd.read_csv(test_path)
+    raise FileNotFoundError("Train/test splits not found; run preprocessing stage first.")
 
 
 def build_features(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series, list[str]]:
@@ -105,17 +117,13 @@ def main() -> None:
     print("=" * 70)
     print()
 
-    data = load_dataset(DATA_DIR)
-    print(f"✓ Loaded {len(data):,} records from {DATA_DIR}")  # noqa: T201
-
-    X, y, feature_cols = build_features(data)
-    print(f"Features: {feature_cols}")  # noqa: T201
-    print(f"Loaded samples: {y.sum():,} ({y.mean()*100:.2f}%)")  # noqa: T201
-    print()
-
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.2, random_state=42, stratify=y
-    )
+    try:
+        train_df, test_df = load_splits()
+        print(f"✓ Loaded precomputed splits: {len(train_df):,} train / {len(test_df):,} test")  # noqa: T201
+    except FileNotFoundError:
+        data = load_dataset(DATA_DIR)
+        print(f"✓ Loaded {len(data):,} records from {DATA_DIR}")  # noqa: T201
+        train_df, test_df = data, None
 
     # fixed best params from prior search
     model = xgb.XGBClassifier(
@@ -133,30 +141,66 @@ def main() -> None:
     )
 
     print("Training XGBoost model...")  # noqa: T201
+    X_train, y_train, features = build_features(train_df)
     model.fit(X_train, y_train)
 
-    y_pred = model.predict(X_test)
-    y_pred_proba = model.predict_proba(X_test)[:, 1]
+    X_test = y_test = y_pred = y_pred_proba = None
+    accuracy = None
+    report = None
+    cm = None
+    importance_df = None
 
-    accuracy = accuracy_score(y_test, y_pred)
-    print(f"Accuracy: {accuracy*100:.2f}%")  # noqa: T201
-    print(classification_report(y_test, y_pred, target_names=["Unloaded", "Loaded"]))  # noqa: T201
+    if test_df is None:
+        print("No test split provided; skipping evaluation.")  # noqa: T201
+    else:
+        X_test, y_test, _ = build_features(test_df)
+        y_pred = model.predict(X_test)
+        y_pred_proba = model.predict_proba(X_test)[:, 1]
 
-    cm = confusion_matrix(y_test, y_pred)
-    importance_dict = model.get_booster().get_score(importance_type="weight")
-    importance_df = (
-        pd.DataFrame([{"feature": k, "importance": v} for k, v in importance_dict.items()])
-        .sort_values("importance", ascending=False)
-        .reset_index(drop=True)
-    )
-    print("Feature importance (weight):")  # noqa: T201
-    print(importance_df.to_string(index=False))  # noqa: T201
+        accuracy = accuracy_score(y_test, y_pred)
+        report = classification_report(y_test, y_pred, target_names=["Unloaded", "Loaded"], output_dict=True)
 
-    plot_results(cm, y_test, y_pred_proba, importance_df, accuracy)
+        print(f"Accuracy: {accuracy*100:.2f}%")  # noqa: T201
+        print(classification_report(y_test, y_pred, target_names=["Unloaded", "Loaded"]))  # noqa: T201
+
+        cm = confusion_matrix(y_test, y_pred)
+        importance_dict = model.get_booster().get_score(importance_type="weight")
+        importance_df = (
+            pd.DataFrame([{"feature": k, "importance": v} for k, v in importance_dict.items()])
+            .sort_values("importance", ascending=False)
+            .reset_index(drop=True)
+        )
+        print("Feature importance (weight):")  # noqa: T201
+        print(importance_df.to_string(index=False))  # noqa: T201
+
+        plot_results(cm, y_test, y_pred_proba, importance_df, accuracy)
 
     ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
     model.save_model(MODEL_PATH)
     print(f"✓ Model saved: {MODEL_PATH.name}")  # noqa: T201
+
+    # Log to MLflow
+    mlflow.set_tracking_uri(MLFLOW_URI)
+    mlflow.set_experiment(EXPERIMENT_NAME)
+    with mlflow.start_run(run_name="xgboost_load_prediction"):
+        mlflow.log_params(
+            {
+                "max_depth": 8,
+                "learning_rate": 0.2,
+                "n_estimators": 150,
+                "min_child_weight": 5,
+                "subsample": 0.8,
+                "colsample_bytree": 0.8,
+                "scale_pos_weight": 5.0,
+            }
+        )
+        if accuracy is not None:
+            mlflow.log_metric("accuracy", accuracy)
+            mlflow.log_dict(report, "classification_report.json")
+            if PLOT_PATH.exists():
+                mlflow.log_artifact(PLOT_PATH)
+        if MODEL_PATH.exists():
+            mlflow.log_artifact(MODEL_PATH)
 
     print("TRAINING COMPLETE")  # noqa: T201
 

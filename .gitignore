@@ -12,3 +12,5 @@ data/
 cleaned_data/
 load_cleaned_data/
 .DS_Store
+.tmp*
+artifacts/
