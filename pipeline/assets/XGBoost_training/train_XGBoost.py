@@ -15,16 +15,7 @@ import xgboost as xgb
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 import mlflow
 
-from pipeline.config import FEATURE_CONFIG, TRAINING_CONFIG
-
-CFG = TRAINING_CONFIG
-DATA_DIR = CFG.data_dir
-SPLITS_DIR = CFG.splits_dir
-ARTIFACT_DIR = CFG.artifact_dir
-MODEL_PATH = CFG.model_path
-PLOT_PATH = CFG.plot_path
-MLFLOW_URI = CFG.mlflow_uri
-EXPERIMENT_NAME = CFG.experiment_name
+from pipeline.config import FEATURE_CONFIG, TRAINING_CONFIG, FeatureConfig, TrainingConfig
 
 
 def load_dataset(data_dir: Path) -> pd.DataFrame:
@@ -44,25 +35,35 @@ def load_dataset(data_dir: Path) -> pd.DataFrame:
     return combined
 
 
-def load_splits() -> tuple[pd.DataFrame, pd.DataFrame]:
-    train_path = SPLITS_DIR / "train.csv"
-    test_path = SPLITS_DIR / "test.csv"
+def load_splits(splits_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
+    train_path = splits_dir / "train.csv"
+    test_path = splits_dir / "test.csv"
     if train_path.exists() and test_path.exists():
         return pd.read_csv(train_path), pd.read_csv(test_path)
     raise FileNotFoundError("Train/test splits not found; run preprocessing stage first.")
 
 
-def build_features(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series, list[str]]:
+def build_features(
+    df: pd.DataFrame, feature_cfg: FeatureConfig = FEATURE_CONFIG
+) -> tuple[pd.DataFrame, pd.Series, list[str]]:
     df = df.copy()
     df["Height_Speed_Interaction"] = df["Height"] * df["Speed"]
-    df["Is_Moving"] = (df["Speed"] > FEATURE_CONFIG.moving_speed_threshold).astype(int)
-    feature_cols = list(FEATURE_CONFIG.feature_columns)
+    df["Is_Moving"] = (df["Speed"] > feature_cfg.moving_speed_threshold).astype(int)
+    feature_cols = list(feature_cfg.feature_columns)
     X = df[feature_cols].fillna(0)
     y = df["Load_Cleaned"].astype(int)
     return X, y, feature_cols
 
 
-def plot_results(cm, y_test, y_pred_proba, importance_df, accuracy) -> None:
+def plot_results(
+    cm,
+    y_test,
+    y_pred_proba,
+    importance_df,
+    accuracy,
+    artifact_dir: Path,
+    plot_path: Path,
+) -> None:
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
 
     ax1 = axes[0, 0]
@@ -108,42 +109,44 @@ Test Set Size: {len(y_test):,}
     ax4.text(0.1, 0.5, metrics_text, fontsize=12, family="monospace", verticalalignment="center")
 
     plt.tight_layout()
-    ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
-    plt.savefig(PLOT_PATH, dpi=300, bbox_inches="tight")
-    print(f"✓ Visualization saved: {PLOT_PATH.name}")  # noqa: T201
+    artifact_dir.mkdir(parents=True, exist_ok=True)
+    plt.savefig(plot_path, dpi=300, bbox_inches="tight")
+    print(f"✓ Visualization saved: {plot_path.name}")  # noqa: T201
 
 
-def main() -> None:
+def main(cfg: TrainingConfig = TRAINING_CONFIG, feature_cfg: FeatureConfig = FEATURE_CONFIG) -> None:
     print("=" * 70)
     print("FORKLIFT LOAD PREDICTION - XGBoost Model")
     print("=" * 70)
     print()
 
     try:
-        train_df, test_df = load_splits()
-        print(f"✓ Loaded precomputed splits: {len(train_df):,} train / {len(test_df):,} test")  # noqa: T201
+        train_df, test_df = load_splits(cfg.splits_dir)
+        print(
+            f"✓ Loaded precomputed splits: {len(train_df):,} train / {len(test_df):,} test"
+        )  # noqa: T201
     except FileNotFoundError:
-        data = load_dataset(DATA_DIR)
-        print(f"✓ Loaded {len(data):,} records from {DATA_DIR}")  # noqa: T201
+        data = load_dataset(cfg.data_dir)
+        print(f"✓ Loaded {len(data):,} records from {cfg.data_dir}")  # noqa: T201
         train_df, test_df = data, None
 
     # fixed best params from prior search
     model = xgb.XGBClassifier(
         objective="binary:logistic",
-        random_state=CFG.random_state,
+        random_state=cfg.random_state,
         use_label_encoder=False,
         eval_metric="logloss",
-        max_depth=CFG.max_depth,
-        learning_rate=CFG.learning_rate,
-        n_estimators=CFG.n_estimators,
-        min_child_weight=CFG.min_child_weight,
-        subsample=CFG.subsample,
-        colsample_bytree=CFG.colsample_bytree,
-        scale_pos_weight=CFG.scale_pos_weight,
+        max_depth=cfg.max_depth,
+        learning_rate=cfg.learning_rate,
+        n_estimators=cfg.n_estimators,
+        min_child_weight=cfg.min_child_weight,
+        subsample=cfg.subsample,
+        colsample_bytree=cfg.colsample_bytree,
+        scale_pos_weight=cfg.scale_pos_weight,
     )
 
     print("Training XGBoost model...")  # noqa: T201
-    X_train, y_train, features = build_features(train_df)
+    X_train, y_train, features = build_features(train_df, feature_cfg)
     model.fit(X_train, y_train)
 
     X_test = y_test = y_pred = y_pred_proba = None
@@ -155,7 +158,7 @@ def main() -> None:
     if test_df is None:
         print("No test split provided; skipping evaluation.")  # noqa: T201
     else:
-        X_test, y_test, _ = build_features(test_df)
+        X_test, y_test, _ = build_features(test_df, feature_cfg)
         y_pred = model.predict(X_test)
         y_pred_proba = model.predict_proba(X_test)[:, 1]
 
@@ -175,34 +178,34 @@ def main() -> None:
         print("Feature importance (weight):")  # noqa: T201
         print(importance_df.to_string(index=False))  # noqa: T201
 
-        plot_results(cm, y_test, y_pred_proba, importance_df, accuracy)
+        plot_results(cm, y_test, y_pred_proba, importance_df, accuracy, cfg.artifact_dir, cfg.plot_path)
 
-    ARTIFACT_DIR.mkdir(parents=True, exist_ok=True)
-    model.save_model(MODEL_PATH)
-    print(f"✓ Model saved: {MODEL_PATH.name}")  # noqa: T201
+    cfg.artifact_dir.mkdir(parents=True, exist_ok=True)
+    model.save_model(cfg.model_path)
+    print(f"✓ Model saved: {cfg.model_path.name}")  # noqa: T201
 
     # Log to MLflow
-    mlflow.set_tracking_uri(MLFLOW_URI)
-    mlflow.set_experiment(EXPERIMENT_NAME)
+    mlflow.set_tracking_uri(cfg.mlflow_uri)
+    mlflow.set_experiment(cfg.experiment_name)
     with mlflow.start_run(run_name="xgboost_load_prediction"):
         mlflow.log_params(
             {
-                "max_depth": 8,
-                "learning_rate": 0.2,
-                "n_estimators": 150,
-                "min_child_weight": 5,
-                "subsample": 0.8,
-                "colsample_bytree": 0.8,
-                "scale_pos_weight": 5.0,
+                "max_depth": cfg.max_depth,
+                "learning_rate": cfg.learning_rate,
+                "n_estimators": cfg.n_estimators,
+                "min_child_weight": cfg.min_child_weight,
+                "subsample": cfg.subsample,
+                "colsample_bytree": cfg.colsample_bytree,
+                "scale_pos_weight": cfg.scale_pos_weight,
             }
         )
         if accuracy is not None:
             mlflow.log_metric("accuracy", accuracy)
             mlflow.log_dict(report, "classification_report.json")
-            if PLOT_PATH.exists():
-                mlflow.log_artifact(PLOT_PATH)
-        if MODEL_PATH.exists():
-            mlflow.log_artifact(MODEL_PATH)
+            if cfg.plot_path.exists():
+                mlflow.log_artifact(cfg.plot_path)
+        if cfg.model_path.exists():
+            mlflow.log_artifact(cfg.model_path)
 
     print("TRAINING COMPLETE")  # noqa: T201
 

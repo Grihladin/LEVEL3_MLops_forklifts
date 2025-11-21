@@ -13,14 +13,11 @@ from pathlib import Path
 
 import pandas as pd
 
-from pipeline.config import CLEANING_CONFIG
+from pipeline.config import CLEANING_CONFIG, CleaningConfig
 
 from . import cleaning_helpers as helpers
 
-CFG = CLEANING_CONFIG
-
-
-def clean_file(csv_path: Path) -> tuple[str | None, dict]:
+def clean_file(csv_path: Path, cfg: CleaningConfig = CLEANING_CONFIG) -> tuple[str | None, dict]:
     df = helpers.assign_headers(csv_path)
     df, removed_onduty = helpers.remove_redundant_onduty_zeros(df)
     df = helpers.coerce_and_sort(df)
@@ -31,12 +28,12 @@ def clean_file(csv_path: Path) -> tuple[str | None, dict]:
     if not helpers.is_forklift(df):
         return None, {"skipped": "not_forklift"}
 
-    frac_above = helpers.fraction_above_max(df, CFG.max_height)
-    if frac_above > CFG.broken_height_threshold:
+    frac_above = helpers.fraction_above_max(df, cfg.max_height)
+    if frac_above > cfg.broken_height_threshold:
         output_name = f"{csv_path.stem}_forklift_broken_height.csv"
-        output_path = CFG.output_dir / output_name
+        output_path = cfg.output_dir / output_name
         df["Timestamp"] = df["Timestamp"].astype("int64")
-        CFG.output_dir.mkdir(parents=True, exist_ok=True)
+        cfg.output_dir.mkdir(parents=True, exist_ok=True)
         df.to_csv(output_path, index=False)
         return output_name, {
             "removed_onduty": removed_onduty,
@@ -44,7 +41,7 @@ def clean_file(csv_path: Path) -> tuple[str | None, dict]:
             "status": "broken_height",
         }
 
-    mask = (df["Height"] >= CFG.min_height) & (df["Height"] <= CFG.max_height)
+    mask = (df["Height"] >= cfg.min_height) & (df["Height"] <= cfg.max_height)
     removed_height = int((~mask).sum())
     df = df[mask]
     if df.empty:
@@ -52,8 +49,8 @@ def clean_file(csv_path: Path) -> tuple[str | None, dict]:
 
     df["Timestamp"] = df["Timestamp"].astype("int64")
     output_name = f"{csv_path.stem}_forklift.csv"
-    output_path = CFG.output_dir / output_name
-    CFG.output_dir.mkdir(parents=True, exist_ok=True)
+    output_path = cfg.output_dir / output_name
+    cfg.output_dir.mkdir(parents=True, exist_ok=True)
     df.to_csv(output_path, index=False)
 
     return output_name, {
@@ -64,13 +61,13 @@ def clean_file(csv_path: Path) -> tuple[str | None, dict]:
     }
 
 
-def run() -> None:
-    raw_files = sorted(CFG.raw_dir.glob("*.csv"))
+def run(cfg: CleaningConfig = CLEANING_CONFIG) -> None:
+    raw_files = sorted(cfg.raw_dir.glob("*.csv"))
     if not raw_files:
-        raise FileNotFoundError(f"No CSV files found in {CFG.raw_dir}")
+        raise FileNotFoundError(f"No CSV files found in {cfg.raw_dir}")
 
     for csv_path in raw_files:
-        name, info = clean_file(csv_path)
+        name, info = clean_file(csv_path, cfg)
         if name:
             print(f"{csv_path.name} -> {name} ({info.get('status')})")  # noqa: T201
         else:
