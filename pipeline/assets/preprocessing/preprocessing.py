@@ -13,13 +13,15 @@ from pathlib import Path
 import pandas as pd
 from sklearn.model_selection import train_test_split
 
-INPUT_DIR = Path(__file__).resolve().parents[3] / "cleaned_data"
-OUTPUT_DIR = Path(__file__).resolve().parents[3] / "load_cleaned_data"
+from pipeline.config import PREPROCESSING_CONFIG
 
-MIN_LOAD_DURATION = 30  # seconds
-MAX_LOAD_DURATION = 7200  # seconds
-MIN_HEIGHT_THRESHOLD = 0.05  # meters
-MIN_SPEED_FOR_FILTERING = 15  # km/h
+CFG = PREPROCESSING_CONFIG
+INPUT_DIR = CFG.input_dir
+OUTPUT_DIR = CFG.output_dir
+MIN_LOAD_DURATION = CFG.min_load_duration
+MAX_LOAD_DURATION = CFG.max_load_duration
+MIN_HEIGHT_THRESHOLD = CFG.min_height_threshold
+MIN_SPEED_FOR_FILTERING = CFG.min_speed_for_filtering
 
 
 def detect_load_events(df: pd.DataFrame) -> list[dict]:
@@ -146,8 +148,8 @@ def run() -> None:
         combined = pd.concat(cleaned_frames, ignore_index=True)
         train_df, test_df = train_test_split(
             combined,
-            test_size=0.2,
-            random_state=42,
+            test_size=CFG.test_size,
+            random_state=CFG.random_state,
             stratify=combined["Load_Cleaned"],
         )
         (OUTPUT_DIR / "splits").mkdir(parents=True, exist_ok=True)

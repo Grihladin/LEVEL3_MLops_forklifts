@@ -7,7 +7,6 @@
 """
 from __future__ import annotations
 
-from pathlib import Path
 from typing import List, Optional
 
 import pandas as pd
@@ -15,9 +14,10 @@ import xgboost as xgb
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
-ROOT_DIR = Path(__file__).resolve().parents[1]
-MODEL_PATH = ROOT_DIR / "artifacts" / "xgboost_load_model.json"
-FEATURE_COLUMNS = ["Height", "Speed", "OnDuty", "Height_Speed_Interaction", "Is_Moving"]
+from pipeline.config import FEATURE_CONFIG, TRAINING_CONFIG
+
+MODEL_PATH = TRAINING_CONFIG.model_path
+FEATURE_COLUMNS = list(FEATURE_CONFIG.feature_columns)
 
 app = FastAPI(
     title="Forklift Load Inference",
@@ -77,7 +77,7 @@ def _build_features(readings: list[Telemetry]) -> pd.DataFrame:
         ]
     )
     base["Height_Speed_Interaction"] = base["Height"] * base["Speed"]
-    base["Is_Moving"] = (base["Speed"] > 1.0).astype(int)
+    base["Is_Moving"] = (base["Speed"] > FEATURE_CONFIG.moving_speed_threshold).astype(int)
     return base[FEATURE_COLUMNS].fillna(0)
 
 

@@ -13,15 +13,11 @@ from pathlib import Path
 
 import pandas as pd
 
+from pipeline.config import CLEANING_CONFIG
+
 from . import cleaning_helpers as helpers
 
-ROOT_DIR = Path(__file__).resolve().parents[3]
-RAW_DIR = ROOT_DIR / "data"
-OUTPUT_DIR = ROOT_DIR / "cleaned_data"
-
-MIN_HEIGHT = 0.0
-MAX_HEIGHT = 7.0
-BROKEN_HEIGHT_THRESHOLD = 0.10
+CFG = CLEANING_CONFIG
 
 
 def clean_file(csv_path: Path) -> tuple[str | None, dict]:
@@ -35,12 +31,12 @@ def clean_file(csv_path: Path) -> tuple[str | None, dict]:
     if not helpers.is_forklift(df):
         return None, {"skipped": "not_forklift"}
 
-    frac_above = helpers.fraction_above_max(df, MAX_HEIGHT)
-    if frac_above > BROKEN_HEIGHT_THRESHOLD:
+    frac_above = helpers.fraction_above_max(df, CFG.max_height)
+    if frac_above > CFG.broken_height_threshold:
         output_name = f"{csv_path.stem}_forklift_broken_height.csv"
-        output_path = OUTPUT_DIR / output_name
+        output_path = CFG.output_dir / output_name
         df["Timestamp"] = df["Timestamp"].astype("int64")
-        OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+        CFG.output_dir.mkdir(parents=True, exist_ok=True)
         df.to_csv(output_path, index=False)
         return output_name, {
             "removed_onduty": removed_onduty,
@@ -48,7 +44,7 @@ def clean_file(csv_path: Path) -> tuple[str | None, dict]:
             "status": "broken_height",
         }
 
-    mask = (df["Height"] >= MIN_HEIGHT) & (df["Height"] <= MAX_HEIGHT)
+    mask = (df["Height"] >= CFG.min_height) & (df["Height"] <= CFG.max_height)
     removed_height = int((~mask).sum())
     df = df[mask]
     if df.empty:
@@ -56,8 +52,8 @@ def clean_file(csv_path: Path) -> tuple[str | None, dict]:
 
     df["Timestamp"] = df["Timestamp"].astype("int64")
     output_name = f"{csv_path.stem}_forklift.csv"
-    output_path = OUTPUT_DIR / output_name
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    output_path = CFG.output_dir / output_name
+    CFG.output_dir.mkdir(parents=True, exist_ok=True)
     df.to_csv(output_path, index=False)
 
     return output_name, {
@@ -69,9 +65,9 @@ def clean_file(csv_path: Path) -> tuple[str | None, dict]:
 
 
 def run() -> None:
-    raw_files = sorted(RAW_DIR.glob("*.csv"))
+    raw_files = sorted(CFG.raw_dir.glob("*.csv"))
     if not raw_files:
-        raise FileNotFoundError(f"No CSV files found in {RAW_DIR}")
+        raise FileNotFoundError(f"No CSV files found in {CFG.raw_dir}")
 
     for csv_path in raw_files:
         name, info = clean_file(csv_path)

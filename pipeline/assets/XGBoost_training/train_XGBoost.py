@@ -15,14 +15,16 @@ import xgboost as xgb
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
 import mlflow
 
-ROOT_DIR = Path(__file__).resolve().parents[3]
-DATA_DIR = ROOT_DIR / "load_cleaned_data"
-SPLITS_DIR = DATA_DIR / "splits"
-ARTIFACT_DIR = ROOT_DIR / "artifacts"
-MODEL_PATH = ARTIFACT_DIR / "xgboost_load_model.json"
-PLOT_PATH = ARTIFACT_DIR / "load_prediction_results.png"
-MLFLOW_URI = (ARTIFACT_DIR / "mlruns").as_uri()
-EXPERIMENT_NAME = "forklift_load_prediction"
+from pipeline.config import FEATURE_CONFIG, TRAINING_CONFIG
+
+CFG = TRAINING_CONFIG
+DATA_DIR = CFG.data_dir
+SPLITS_DIR = CFG.splits_dir
+ARTIFACT_DIR = CFG.artifact_dir
+MODEL_PATH = CFG.model_path
+PLOT_PATH = CFG.plot_path
+MLFLOW_URI = CFG.mlflow_uri
+EXPERIMENT_NAME = CFG.experiment_name
 
 
 def load_dataset(data_dir: Path) -> pd.DataFrame:
@@ -53,8 +55,8 @@ def load_splits() -> tuple[pd.DataFrame, pd.DataFrame]:
 def build_features(df: pd.DataFrame) -> tuple[pd.DataFrame, pd.Series, list[str]]:
     df = df.copy()
     df["Height_Speed_Interaction"] = df["Height"] * df["Speed"]
-    df["Is_Moving"] = (df["Speed"] > 1.0).astype(int)
-    feature_cols = ["Height", "Speed", "OnDuty", "Height_Speed_Interaction", "Is_Moving"]
+    df["Is_Moving"] = (df["Speed"] > FEATURE_CONFIG.moving_speed_threshold).astype(int)
+    feature_cols = list(FEATURE_CONFIG.feature_columns)
     X = df[feature_cols].fillna(0)
     y = df["Load_Cleaned"].astype(int)
     return X, y, feature_cols
@@ -128,16 +130,16 @@ def main() -> None:
     # fixed best params from prior search
     model = xgb.XGBClassifier(
         objective="binary:logistic",
-        random_state=42,
+        random_state=CFG.random_state,
         use_label_encoder=False,
         eval_metric="logloss",
-        max_depth=8,
-        learning_rate=0.2,
-        n_estimators=150,
-        min_child_weight=5,
-        subsample=0.8,
-        colsample_bytree=0.8,
-        scale_pos_weight=5.0,
+        max_depth=CFG.max_depth,
+        learning_rate=CFG.learning_rate,
+        n_estimators=CFG.n_estimators,
+        min_child_weight=CFG.min_child_weight,
+        subsample=CFG.subsample,
+        colsample_bytree=CFG.colsample_bytree,
+        scale_pos_weight=CFG.scale_pos_weight,
     )
 
     print("Training XGBoost model...")  # noqa: T201

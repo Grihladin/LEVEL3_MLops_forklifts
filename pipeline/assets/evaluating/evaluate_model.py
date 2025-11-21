@@ -11,17 +11,17 @@ from sklearn.metrics import accuracy_score, classification_report, confusion_mat
 import mlflow
 
 from pipeline.assets.XGBoost_training.train_XGBoost import build_features
+from pipeline.config import EVALUATION_CONFIG, TRAINING_CONFIG
 
-ROOT_DIR = Path(__file__).resolve().parents[3]
-DATA_DIR = ROOT_DIR / "load_cleaned_data"
-SPLITS_DIR = DATA_DIR / "splits"
-ARTIFACT_DIR = ROOT_DIR / "artifacts"
-MODEL_PATH = ARTIFACT_DIR / "xgboost_load_model.json"
-CONFUSION_PLOT_PATH = ARTIFACT_DIR / "confusion_matrix.png"
-PROB_PLOT_PATH = ARTIFACT_DIR / "probability_distribution.png"
-METRICS_PATH = ARTIFACT_DIR / "evaluation_metrics.json"
-MLFLOW_URI = (ARTIFACT_DIR / "mlruns").as_uri()
-EXPERIMENT_NAME = "forklift_load_prediction"
+CFG = EVALUATION_CONFIG
+SPLITS_DIR = CFG.splits_dir
+ARTIFACT_DIR = CFG.artifact_dir
+MODEL_PATH = CFG.model_path
+CONFUSION_PLOT_PATH = CFG.confusion_plot_path
+PROB_PLOT_PATH = CFG.probability_plot_path
+METRICS_PATH = CFG.metrics_path
+MLFLOW_URI = CFG.mlflow_uri
+EXPERIMENT_NAME = CFG.experiment_name
 
 
 def load_test_split() -> pd.DataFrame:

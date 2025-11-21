@@ -6,6 +6,7 @@ from pipeline.assets.cleaning import cleaning_pipeline
 from pipeline.assets.preprocessing import preprocessing
 from pipeline.assets.XGBoost_training import train_XGBoost
 from pipeline.assets.evaluating import evaluate_model
+from pipeline.config import EVALUATION_CONFIG, TRAINING_CONFIG
 
 
 @asset(name="cleaned_data")
@@ -33,8 +34,8 @@ def load_cleaned_data_asset(context) -> str:
 @asset(name="trained_model", deps=["load_cleaned_data"])
 def trained_model_asset(context) -> str:
     train_XGBoost.main()
-    model_path = train_XGBoost.MODEL_PATH
-    plot_path = train_XGBoost.PLOT_PATH
+    model_path = TRAINING_CONFIG.model_path
+    plot_path = TRAINING_CONFIG.plot_path
 
     metadata = {
         "model": MetadataValue.path(str(model_path)),
@@ -60,4 +61,4 @@ def evaluated_model_asset(context) -> str:
             "probability_plot": MetadataValue.path(metrics["probability_plot"]),
         }
     )
-    return str(evaluate_model.METRICS_PATH)
+    return str(EVALUATION_CONFIG.metrics_path)

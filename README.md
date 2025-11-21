@@ -9,11 +9,16 @@ Clean raw forklift telemetry, mask noisy load signals, and train/evaluate an XGB
 - `artifacts/` — trained model (`xgboost_load_model.json`), plots, metrics JSON, and local MLflow tracking under `artifacts/mlruns/`.
 - `pipeline/assets/` — reusable steps: `cleaning/cleaning_pipeline.py`, `preprocessing/preprocessing.py`, `XGBoost_training/train_XGBoost.py`, `evaluating/evaluate_model.py`, plus `assets.py` for Dagster asset wiring.
 - `pyproject.toml` / `uv.lock` — Python 3.13 project definition and locked dependencies.
+- `pipeline/config/config.py` — single source for paths, thresholds, and model hyperparameters.
 
 ## Setup
 - Python 3.13 (see `.python-version`).
 - Install deps with `uv sync` (preferred) or `pip install -e .` to read `pyproject.toml`.
 - Place raw CSVs in `data/` before running the pipeline.
+
+## Configuration
+- Edit `pipeline/config/config.py` to adjust paths, cleaning thresholds, masking rules (durations/height/speed), feature flags, and XGBoost hyperparameters.
+- Dagster assets, the FastAPI server, and the training/evaluation scripts all read from this config so changes propagate without touching individual modules.
 
 ## Data flow (standalone)
 1) **Height cleaning** — `pipeline/assets/cleaning/cleaning_pipeline.py`  
