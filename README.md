@@ -56,6 +56,25 @@ Clean raw forklift telemetry, mask noisy load signals, and train/evaluate an XGB
   ```
 - Outputs stay in `cleaned_data/`, `load_cleaned_data/`, and `artifacts/` with metadata attached in Dagster.
 
+## FastAPI inference server
+- Start the API (loads `artifacts/xgboost_load_model.json` once):
+  ```bash
+  uv run uvicorn api.main:app --port 4444
+  ```
+- Health check: `GET /health`
+- Predict (batched; suitable for ~10–20 forklifts sending every ~2s):
+  ```bash
+  curl -X POST http://localhost:4444/predict \
+    -H "Content-Type: application/json" \
+    -d '{
+          "readings": [
+            {"forklift_id": "F1", "timestamp_ms": 1730000000000, "height": 1.8, "speed": 6.2, "on_duty": 1},
+            {"forklift_id": "F2", "timestamp_ms": 1730000000500, "height": 0.3, "speed": 12.5, "on_duty": 1}
+          ]
+        }'
+  ```
+- Response fields: per reading you get `loaded_probability` (0–1) and `loaded` (boolean), plus echoed `forklift_id`/`timestamp_ms`.
+
 ## MLflow tracking
 - Training and evaluation log runs to the local store at `artifacts/mlruns/` (set via a file URI).
 - Launch the MLflow UI to browse params, metrics, and artifacts:
