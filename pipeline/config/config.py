@@ -35,8 +35,8 @@ class CleaningConfig:
 class PreprocessingConfig:
     input_dir: Path = PATHS.cleaned_data
     output_dir: Path = PATHS.load_cleaned_data
-    min_load_duration: int = 30  # seconds
-    max_load_duration: int = 7200  # seconds
+    min_load_duration: int = 10  # seconds
+    max_load_duration: int = 3600  # seconds
     min_height_threshold: float = 0.05  # meters
     test_size: float = 0.2
     random_state: int = 42
