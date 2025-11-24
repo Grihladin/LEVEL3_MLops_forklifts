@@ -70,7 +70,6 @@ class TrainingConfig:
     min_child_weight: int = 5
     subsample: float = 0.8
     colsample_bytree: float = 0.8
-    scale_pos_weight: float = 5.0
 
 
 @dataclass(frozen=True)

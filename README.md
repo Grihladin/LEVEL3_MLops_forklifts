@@ -36,7 +36,7 @@ Clean raw forklift telemetry, mask noisy load signals, and train/evaluate an XGB
    ```
 
 3) **Train XGBoost** — `pipeline/assets/XGBoost_training/train_XGBoost.py`  
-   Features: `Height`, `Speed`, `OnDuty`, `Height*Speed`, `Is_Moving`. Uses fixed hyperparameters with `scale_pos_weight` to balance classes. Saves the model to `artifacts/xgboost_load_model.json`, plot `load_prediction_results.png`, and logs to MLflow in `artifacts/mlruns/`.  
+   Features: `Height`, `Speed`, `OnDuty`, `Height*Speed`, `Is_Moving`. Uses fixed hyperparameters and derives `scale_pos_weight` from the training split to balance classes automatically. Saves the model to `artifacts/xgboost_load_model.json`, plot `load_prediction_results.png`, and logs to MLflow in `artifacts/mlruns/`.  
    Run:
    ```bash
    uv run python -m pipeline.assets.XGBoost_training.train_XGBoost
@@ -91,10 +91,10 @@ Clean raw forklift telemetry, mask noisy load signals, and train/evaluate an XGB
 ## Key parameters
 - Stage 1: `MIN_HEIGHT=0.0`, `MAX_HEIGHT=7.0`, `BROKEN_HEIGHT_THRESHOLD=0.10`.
 - Stage 2: `MIN_HEIGHT_THRESHOLD=0.05`, `MIN_SPEED_FOR_FILTERING=15`, `MIN_LOAD_DURATION=30`, `MAX_LOAD_DURATION=7200`.
-- Model: XGBoost binary classifier (max_depth=8, learning_rate=0.2, n_estimators=150, min_child_weight=5, subsample=0.8, colsample_bytree=0.8, scale_pos_weight=5.0).
+- Model: XGBoost binary classifier (max_depth=8, learning_rate=0.2, n_estimators=150, min_child_weight=5, subsample=0.8, colsample_bytree=0.8) with `scale_pos_weight` computed from the observed class imbalance during training.
 
 ## Current results
-- `artifacts/evaluation_metrics.json` reports ~0.81 accuracy on the held-out split (class imbalance handled via `scale_pos_weight`).
+- `artifacts/evaluation_metrics.json` reports ~0.81 accuracy on the held-out split (class imbalance handled via dynamic `scale_pos_weight`).
 - Plots: `artifacts/load_prediction_results.png`, `artifacts/confusion_matrix.png`, `artifacts/probability_distribution.png` for quick inspection.
 
 ## Adding new data

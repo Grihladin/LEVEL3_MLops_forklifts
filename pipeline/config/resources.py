@@ -91,7 +91,6 @@ class TrainingResource(ConfigurableResource):
     min_child_weight: int = TRAINING_CONFIG.min_child_weight
     subsample: float = TRAINING_CONFIG.subsample
     colsample_bytree: float = TRAINING_CONFIG.colsample_bytree
-    scale_pos_weight: float = TRAINING_CONFIG.scale_pos_weight
 
     def to_config(self) -> TrainingConfig:
         return TrainingConfig(
@@ -109,7 +108,6 @@ class TrainingResource(ConfigurableResource):
             min_child_weight=self.min_child_weight,
             subsample=self.subsample,
             colsample_bytree=self.colsample_bytree,
-            scale_pos_weight=self.scale_pos_weight,
         )
 
 

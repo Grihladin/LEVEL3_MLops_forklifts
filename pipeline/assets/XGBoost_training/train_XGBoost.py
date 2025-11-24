@@ -130,7 +130,18 @@ def main(cfg: TrainingConfig = TRAINING_CONFIG, feature_cfg: FeatureConfig = FEA
         print(f"✓ Loaded {len(data):,} records from {cfg.data_dir}")  # noqa: T201
         train_df, test_df = data, None
 
-    # fixed best params from prior search
+    print("Training XGBoost model...")  # noqa: T201
+    X_train, y_train, features = build_features(train_df, feature_cfg)
+    pos_count = (y_train == 1).sum()
+    neg_count = (y_train == 0).sum()
+    if pos_count == 0:
+        print("Warning: no positive samples detected; defaulting scale_pos_weight to 1.0")  # noqa: T201,E501
+        scale_pos_weight = 1.0
+    else:
+        scale_pos_weight = float(neg_count / pos_count)
+        print(f"Calculated scale_pos_weight: {scale_pos_weight:.2f}")
+
+    # fixed best params from prior search with dynamic class weight
     model = xgb.XGBClassifier(
         objective="binary:logistic",
         random_state=cfg.random_state,
@@ -142,11 +153,8 @@ def main(cfg: TrainingConfig = TRAINING_CONFIG, feature_cfg: FeatureConfig = FEA
         min_child_weight=cfg.min_child_weight,
         subsample=cfg.subsample,
         colsample_bytree=cfg.colsample_bytree,
-        scale_pos_weight=cfg.scale_pos_weight,
+        scale_pos_weight=scale_pos_weight,
     )
-
-    print("Training XGBoost model...")  # noqa: T201
-    X_train, y_train, features = build_features(train_df, feature_cfg)
     model.fit(X_train, y_train)
 
     X_test = y_test = y_pred = y_pred_proba = None
@@ -196,7 +204,7 @@ def main(cfg: TrainingConfig = TRAINING_CONFIG, feature_cfg: FeatureConfig = FEA
                 "min_child_weight": cfg.min_child_weight,
                 "subsample": cfg.subsample,
                 "colsample_bytree": cfg.colsample_bytree,
-                "scale_pos_weight": cfg.scale_pos_weight,
+                "scale_pos_weight": scale_pos_weight,
             }
         )
         if accuracy is not None:
