@@ -46,7 +46,6 @@ class PreprocessingResource(ConfigurableResource):
     min_load_duration: int = PREPROCESSING_CONFIG.min_load_duration
     max_load_duration: int = PREPROCESSING_CONFIG.max_load_duration
     min_height_threshold: float = PREPROCESSING_CONFIG.min_height_threshold
-    min_speed_for_filtering: float = PREPROCESSING_CONFIG.min_speed_for_filtering
     test_size: float = PREPROCESSING_CONFIG.test_size
     random_state: int = PREPROCESSING_CONFIG.random_state
 
@@ -57,7 +56,6 @@ class PreprocessingResource(ConfigurableResource):
             min_load_duration=self.min_load_duration,
             max_load_duration=self.max_load_duration,
             min_height_threshold=self.min_height_threshold,
-            min_speed_for_filtering=self.min_speed_for_filtering,
             test_size=self.test_size,
             random_state=self.random_state,
         )
@@ -134,4 +132,3 @@ class EvaluationResource(ConfigurableResource):
             probability_plot_path=Path(self.probability_plot_path),
             metrics_path=Path(self.metrics_path),
         )
-

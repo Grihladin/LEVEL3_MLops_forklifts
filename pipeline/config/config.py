@@ -15,7 +15,7 @@ class Paths:
     cleaned_data: Path = ROOT_DIR / "cleaned_data"
     load_cleaned_data: Path = ROOT_DIR / "load_cleaned_data"
     artifacts: Path = ROOT_DIR / "artifacts"
-    mlruns: Path = artifacts / "mlruns"
+    mlruns: Path = ROOT_DIR / "mlruns"
     splits: Path = load_cleaned_data / "splits"
 
 
@@ -38,7 +38,6 @@ class PreprocessingConfig:
     min_load_duration: int = 30  # seconds
     max_load_duration: int = 7200  # seconds
     min_height_threshold: float = 0.05  # meters
-    min_speed_for_filtering: float = 15  # km/h
     test_size: float = 0.2
     random_state: int = 42
 

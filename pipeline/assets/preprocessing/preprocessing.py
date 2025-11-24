@@ -1,7 +1,7 @@
 """Stage 2 preprocessing: apply load mask to cleaned forklifts and prepare splits.
 
 - Reads height-cleaned forklifts from ``cleaned_data/`` (skips broken height files).
-- Applies height/speed filters and short/long event removal to produce ``Load_Cleaned``.
+- Applies height filters and short/long event removal to produce ``Load_Cleaned``.
 - Writes per-file outputs to ``load_cleaned_data/`` and a summary CSV.
 - Concatenates all cleaned frames and writes stratified train/test splits to ``load_cleaned_data/splits/``.
 """
@@ -68,10 +68,6 @@ def clean_file(csv_path: Path, cfg: PreprocessingConfig = PREPROCESSING_CONFIG) 
     df.loc[low_height_mask, "Load_Cleaned"] = 0
     height_filtered = int(low_height_mask.sum())
 
-    high_speed_mask = (df["Load"] == 1) & (df["Speed"] > cfg.min_speed_for_filtering)
-    df.loc[high_speed_mask, "Load_Cleaned"] = 0
-    speed_filtered = int(high_speed_mask.sum())
-
     events = detect_load_events(df)
     short_events_filtered = 0
     long_events_filtered = 0
@@ -107,7 +103,6 @@ def clean_file(csv_path: Path, cfg: PreprocessingConfig = PREPROCESSING_CONFIG) 
         "Records_Changed": records_changed,
         "Percentage_Changed": (records_changed / original_count * 100) if original_count else 0,
         "Height_Filtered": height_filtered,
-        "Speed_Filtered": speed_filtered,
         "Short_Events_Filtered": short_events_filtered,
         "Long_Events_Filtered": long_events_filtered,
         "Valid_Load_Events": len(final_events),
