@@ -1,6 +1,7 @@
 """Train an XGBoost model to predict forklift load state.
 
-- Input: cleaned load-label files from ``load_cleaned_data/`` (output of load_mask.py).
+- Input: feature-engineered files from ``engineered_data/``.
+- Splits the dataset into train/test (if not already present) and saves to ``engineered_data/splits/``.
 - Output: model + evaluation plot written to ``artifacts/``.
 """
 
@@ -13,20 +14,24 @@ import pandas as pd
 import seaborn as sns
 import xgboost as xgb
 from sklearn.metrics import accuracy_score, classification_report, confusion_matrix
+from sklearn.model_selection import train_test_split
 import mlflow
 
+from pipeline.assets.engineered_data.engineered_data import engineer_features
 from pipeline.config import FEATURE_CONFIG, TRAINING_CONFIG, FeatureConfig, TrainingConfig
 
 
 def load_dataset(data_dir: Path) -> pd.DataFrame:
-    files = sorted(data_dir.glob("*_forklift_load_cleaned.csv"))
+    files = sorted(data_dir.glob("*_forklift_features.csv"))
     if not files:
-        raise FileNotFoundError(f"No *_forklift_load_cleaned.csv files found in {data_dir}")
+        raise FileNotFoundError(
+            f"No *_forklift_features.csv files found in {data_dir}; run the engineered_data stage first."
+        )
 
     frames = []
     for path in files:
         df = pd.read_csv(path)
-        df["ForkliftID"] = path.stem.replace("_forklift_load_cleaned", "")
+        df["ForkliftID"] = path.stem.replace("_forklift_features", "")
         frames.append(df)
 
     combined = pd.concat(frames, ignore_index=True)
@@ -40,7 +45,24 @@ def load_splits(splits_dir: Path) -> tuple[pd.DataFrame, pd.DataFrame]:
     test_path = splits_dir / "test.csv"
     if train_path.exists() and test_path.exists():
         return pd.read_csv(train_path), pd.read_csv(test_path)
-    raise FileNotFoundError("Train/test splits not found; run preprocessing stage first.")
+    raise FileNotFoundError("Train/test splits not found.")
+
+
+def create_splits(data: pd.DataFrame, cfg: TrainingConfig) -> tuple[pd.DataFrame, pd.DataFrame]:
+    if data.empty:
+        raise ValueError("Combined dataset is empty after loading files.")
+
+    stratify_col = data["Load_Cleaned"] if data["Load_Cleaned"].nunique() > 1 else None
+    train_df, test_df = train_test_split(
+        data,
+        test_size=cfg.test_size,
+        random_state=cfg.random_state,
+        stratify=stratify_col,
+    )
+    cfg.splits_dir.mkdir(parents=True, exist_ok=True)
+    train_df.to_csv(cfg.splits_dir / "train.csv", index=False)
+    test_df.to_csv(cfg.splits_dir / "test.csv", index=False)
+    return train_df, test_df
 
 
 def build_features(
@@ -49,7 +71,13 @@ def build_features(
     df = df.copy()
     df["Height_Speed_Interaction"] = df["Height"] * df["Speed"]
     df["Is_Moving"] = (df["Speed"] > feature_cfg.moving_speed_threshold).astype(int)
+    df = engineer_features(df, feature_cfg)
+
     feature_cols = list(feature_cfg.feature_columns)
+    for col in feature_cols:
+        if col not in df.columns:
+            df[col] = 0.0
+
     X = df[feature_cols].fillna(0)
     y = df["Load_Cleaned"].astype(int)
     return X, y, feature_cols
@@ -128,7 +156,11 @@ def main(cfg: TrainingConfig = TRAINING_CONFIG, feature_cfg: FeatureConfig = FEA
     except FileNotFoundError:
         data = load_dataset(cfg.data_dir)
         print(f"✓ Loaded {len(data):,} records from {cfg.data_dir}")  # noqa: T201
-        train_df, test_df = data, None
+        train_df, test_df = create_splits(data, cfg)
+        print(
+            f"✓ Created stratified splits: {len(train_df):,} train / {len(test_df):,} test "
+            f"(saved to {cfg.splits_dir})"
+        )  # noqa: T201
 
     print("Training XGBoost model...")  # noqa: T201
     X_train, y_train, features = build_features(train_df, feature_cfg)

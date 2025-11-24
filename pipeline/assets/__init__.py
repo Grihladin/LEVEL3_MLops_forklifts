@@ -10,7 +10,7 @@ from pipeline.config.resources import (
 
 from .assets import (
     cleaned_data_asset,
-    load_cleaned_data_asset,
+    engineered_data_asset,
     trained_model_asset,
     evaluated_model_asset,
 )
@@ -18,7 +18,7 @@ from .assets import (
 defs = Definitions(
     assets=[
         cleaned_data_asset,
-        load_cleaned_data_asset,
+        engineered_data_asset,
         trained_model_asset,
         evaluated_model_asset,
     ],

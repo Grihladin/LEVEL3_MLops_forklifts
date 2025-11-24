@@ -4,10 +4,10 @@ Clean raw forklift telemetry, mask noisy load signals, and train/evaluate an XGB
 
 ## Repository layout
 - `data/` — raw semicolon-delimited CSVs: `FFFID,Height,Load,OnDuty,Timestamp,Latitude,Longitude,Speed`.
-- `cleaned_data/` — height-cleaned outputs and `_broken_height` files from stage 1.
-- `load_cleaned_data/` — load-masked outputs, `cleaning_summary.csv`, and `splits/` (train/test) from stage 2.
+- `cleaned_data/` — height-cleaned outputs and `_broken_height` files from stage 1, plus load-masked files and `cleaning_summary.csv` from stage 2.
+- `engineered_data/` — feature-engineered outputs and `splits/` (train/test) written during training.
 - `artifacts/` — trained model (`xgboost_load_model.json`), plots, metrics JSON, and local MLflow tracking under `artifacts/mlruns/`.
-- `pipeline/assets/` — reusable steps: `cleaning/cleaning_pipeline.py`, `preprocessing/preprocessing.py`, `XGBoost_training/train_XGBoost.py`, `evaluating/evaluate_model.py`, plus `assets.py` for Dagster asset wiring.
+- `pipeline/assets/` — reusable steps: `cleaning/cleaning_pipeline.py`, `engineered_data/engineered_data.py`, `XGBoost_training/train_XGBoost.py`, `evaluating/evaluate_model.py`, plus `assets.py` for Dagster asset wiring.
 - `pyproject.toml` / `uv.lock` — Python 3.13 project definition and locked dependencies.
 - `pipeline/config/config.py` — single source for paths, thresholds, and model hyperparameters.
 
@@ -21,22 +21,22 @@ Clean raw forklift telemetry, mask noisy load signals, and train/evaluate an XGB
 - Dagster assets, the FastAPI server, and the training/evaluation scripts all read from this config so changes propagate without touching individual modules.
 
 ## Data flow (standalone)
-1) **Height cleaning** — `pipeline/assets/cleaning/cleaning_pipeline.py`  
-   Adds headers, removes repeated `OnDuty=0`, drops invalid `Timestamp/Height`, sorts by time. Skips non-forklifts (no non-zero height). Marks broken sensors if >10% readings exceed `MAX_HEIGHT` (7.0 m) and writes `<id>_forklift_broken_height.csv`; otherwise clamps to `[MIN_HEIGHT, MAX_HEIGHT]` and writes `<id>_forklift.csv` in `cleaned_data/`.  
+1) **Height cleaning + load masking** — `pipeline/assets/cleaning/cleaning_pipeline.py`  
+   Adds headers, removes repeated `OnDuty=0`, drops invalid `Timestamp/Height`, sorts by time. Skips non-forklifts (no non-zero height). Marks broken sensors if >10% readings exceed `MAX_HEIGHT` (7.0 m) and writes `<id>_forklift_broken_height.csv`; otherwise clamps to `[MIN_HEIGHT, MAX_HEIGHT]` and writes `<id>_forklift.csv` in `cleaned_data/`. Then masks load noise (height <0.05 m, remove events <30 s or >2 h) and writes `<id>_forklift_load_cleaned.csv` plus `cleaning_summary.csv` in `cleaned_data/`.  
    Run:
    ```bash
    uv run python -m pipeline.assets.cleaning.cleaning_pipeline
    ```
 
-2) **Load masking & splits** — `pipeline/assets/preprocessing/preprocessing.py`  
-   Uses `<id>_forklift.csv`, ignores `_broken_height` files. Sets `Load` to zero when height < 0.05 m or speed > 15 km/h, removes events <30 s or >2 h, and writes `<id>_forklift_load_cleaned.csv`. Creates `cleaning_summary.csv` plus stratified `splits/train.csv` and `splits/test.csv`.  
+2) **Feature engineering** — `pipeline/assets/engineered_data/engineered_data.py`  
+   Takes load-masked files in `cleaned_data/` (with `Load_Cleaned` already present), computes deltas/rates via `run_feature_engineering`, and writes `<id>_forklift_features.csv` to `engineered_data/`.  
    Run:
    ```bash
-   uv run python -m pipeline.assets.preprocessing.preprocessing
+   uv run python -m pipeline.assets.engineered_data.engineered_data
    ```
 
 3) **Train XGBoost** — `pipeline/assets/XGBoost_training/train_XGBoost.py`  
-   Features: `Height`, `Speed`, `OnDuty`, `Height*Speed`, `Is_Moving`. Uses fixed hyperparameters and derives `scale_pos_weight` from the training split to balance classes automatically. Saves the model to `artifacts/xgboost_load_model.json`, plot `load_prediction_results.png`, and logs to MLflow in `artifacts/mlruns/`.  
+   Features: base signals plus deltas/rates (`DeltaHeight`, `DeltaSpeed`, `DeltaTimeSeconds`, `HeightChangeRate`, `TimeSinceLoadChange`). Creates stratified train/test splits (if missing) under `engineered_data/splits/`, uses fixed hyperparameters, and derives `scale_pos_weight` from the training split to balance classes automatically. Saves the model to `artifacts/xgboost_load_model.json`, plot `load_prediction_results.png`, and logs to MLflow in `artifacts/mlruns/`.  
    Run:
    ```bash
    uv run python -m pipeline.assets.XGBoost_training.train_XGBoost
@@ -57,9 +57,9 @@ Clean raw forklift telemetry, mask noisy load signals, and train/evaluate an XGB
   ```
 - Materialize everything in order:
   ```bash
-  uv run dagster asset materialize cleaned_data load_cleaned_data trained_model evaluated_model -m pipeline.assets
+  uv run dagster asset materialize cleaned_data engineered_data trained_model evaluated_model -m pipeline.assets
   ```
-- Outputs stay in `cleaned_data/`, `load_cleaned_data/`, and `artifacts/` with metadata attached in Dagster.
+- Outputs stay in `cleaned_data/`, `engineered_data/`, and `artifacts/` with metadata attached in Dagster.
 
 ## FastAPI inference server
 - Start the API (loads `artifacts/xgboost_load_model.json` once):

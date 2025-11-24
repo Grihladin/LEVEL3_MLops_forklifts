@@ -16,7 +16,7 @@ from pipeline.config import EVALUATION_CONFIG, FEATURE_CONFIG, EvaluationConfig,
 def load_test_split(splits_dir: Path) -> pd.DataFrame:
     test_path = splits_dir / "test.csv"
     if not test_path.exists():
-        raise FileNotFoundError("Test split not found; run preprocessing stage first.")
+        raise FileNotFoundError("Test split not found; run the training stage to create splits first.")
     return pd.read_csv(test_path)
 
 

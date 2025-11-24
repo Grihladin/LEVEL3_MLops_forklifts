@@ -39,15 +39,13 @@ class CleaningResource(ConfigurableResource):
 
 
 class PreprocessingResource(ConfigurableResource):
-    """Dagster-configurable settings for the preprocessing stage."""
+    """Dagster-configurable settings for the load-masking stage."""
 
     input_dir: str = str(PATHS.cleaned_data)
-    output_dir: str = str(PATHS.load_cleaned_data)
+    output_dir: str = str(PATHS.cleaned_data)
     min_load_duration: int = PREPROCESSING_CONFIG.min_load_duration
     max_load_duration: int = PREPROCESSING_CONFIG.max_load_duration
     min_height_threshold: float = PREPROCESSING_CONFIG.min_height_threshold
-    test_size: float = PREPROCESSING_CONFIG.test_size
-    random_state: int = PREPROCESSING_CONFIG.random_state
 
     def to_config(self) -> PreprocessingConfig:
         return PreprocessingConfig(
@@ -56,20 +54,22 @@ class PreprocessingResource(ConfigurableResource):
             min_load_duration=self.min_load_duration,
             max_load_duration=self.max_load_duration,
             min_height_threshold=self.min_height_threshold,
-            test_size=self.test_size,
-            random_state=self.random_state,
         )
 
 
 class FeatureResource(ConfigurableResource):
     """Dagster-configurable settings for feature engineering."""
 
+    engineered_output_dir: str = str(PATHS.engineered_data)
     moving_speed_threshold: float = FEATURE_CONFIG.moving_speed_threshold
+    load_change_rate_threshold: float = FEATURE_CONFIG.load_change_rate_threshold
     feature_columns: list[str] = list(FEATURE_CONFIG.feature_columns)
 
     def to_config(self) -> FeatureConfig:
         return FeatureConfig(
+            engineered_output_dir=Path(self.engineered_output_dir),
             moving_speed_threshold=self.moving_speed_threshold,
+            load_change_rate_threshold=self.load_change_rate_threshold,
             feature_columns=tuple(self.feature_columns),
         )
 
@@ -77,11 +77,12 @@ class FeatureResource(ConfigurableResource):
 class TrainingResource(ConfigurableResource):
     """Dagster-configurable settings for model training."""
 
-    data_dir: str = str(PATHS.load_cleaned_data)
+    data_dir: str = str(PATHS.engineered_data)
     splits_dir: str = str(PATHS.splits)
     artifact_dir: str = str(PATHS.artifacts)
     model_path: str = str(TRAINING_CONFIG.model_path)
     plot_path: str = str(TRAINING_CONFIG.plot_path)
+    test_size: float = TRAINING_CONFIG.test_size
     mlflow_uri: str = TRAINING_CONFIG.mlflow_uri
     experiment_name: str = TRAINING_CONFIG.experiment_name
     random_state: int = TRAINING_CONFIG.random_state
@@ -99,6 +100,7 @@ class TrainingResource(ConfigurableResource):
             artifact_dir=Path(self.artifact_dir),
             model_path=Path(self.model_path),
             plot_path=Path(self.plot_path),
+            test_size=self.test_size,
             mlflow_uri=self.mlflow_uri,
             experiment_name=self.experiment_name,
             random_state=self.random_state,

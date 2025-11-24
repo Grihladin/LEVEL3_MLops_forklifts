@@ -13,10 +13,10 @@ class Paths:
     root: Path = ROOT_DIR
     raw_data: Path = ROOT_DIR / "data"
     cleaned_data: Path = ROOT_DIR / "cleaned_data"
-    load_cleaned_data: Path = ROOT_DIR / "load_cleaned_data"
+    engineered_data: Path = ROOT_DIR / "engineered_data"
     artifacts: Path = ROOT_DIR / "artifacts"
     mlruns: Path = ROOT_DIR / "mlruns"
-    splits: Path = load_cleaned_data / "splits"
+    splits: Path = engineered_data / "splits"
 
 
 PATHS = Paths()
@@ -34,42 +34,48 @@ class CleaningConfig:
 @dataclass(frozen=True)
 class PreprocessingConfig:
     input_dir: Path = PATHS.cleaned_data
-    output_dir: Path = PATHS.load_cleaned_data
+    output_dir: Path = PATHS.cleaned_data
     min_load_duration: int = 10  # seconds
     max_load_duration: int = 3600  # seconds
     min_height_threshold: float = 0.05  # meters
-    test_size: float = 0.2
-    random_state: int = 42
 
 
 @dataclass(frozen=True)
 class FeatureConfig:
+    engineered_output_dir: Path = PATHS.engineered_data
     moving_speed_threshold: float = 1.0  # km/h for Is_Moving flag
+    load_change_rate_threshold: float = 0.05  # delta height per second to infer change when LoadChange missing
     feature_columns: tuple[str, ...] = (
         "Height",
         "Speed",
         "OnDuty",
         "Height_Speed_Interaction",
         "Is_Moving",
+        "DeltaHeight",
+        "DeltaSpeed",
+        "DeltaTimeSeconds",
+        "HeightChangeRate",
+        "TimeSinceLoadChange",
     )
 
 
 @dataclass(frozen=True)
 class TrainingConfig:
-    data_dir: Path = PATHS.load_cleaned_data
+    data_dir: Path = PATHS.engineered_data
     splits_dir: Path = PATHS.splits
     artifact_dir: Path = PATHS.artifacts
     model_path: Path = artifact_dir / "xgboost_load_model.json"
     plot_path: Path = artifact_dir / "load_prediction_results.png"
+    test_size: float = 0.2
     mlflow_uri: str = PATHS.mlruns.as_uri()
     experiment_name: str = "forklift_load_prediction"
     random_state: int = 42
-    max_depth: int = 8
-    learning_rate: float = 0.2
-    n_estimators: int = 150
+    max_depth: int = 12
+    learning_rate: float = 0.3
+    n_estimators: int = 400
     min_child_weight: int = 5
-    subsample: float = 0.8
-    colsample_bytree: float = 0.8
+    subsample: float = 0.7
+    colsample_bytree: float = 1.0
 
 
 @dataclass(frozen=True)
