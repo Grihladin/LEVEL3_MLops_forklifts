@@ -15,4 +15,4 @@ load_cleaned_data/
 .tmp*
 artifacts/
 mlruns/
-engeneered_data_csv/
+engineered_data_csv/
