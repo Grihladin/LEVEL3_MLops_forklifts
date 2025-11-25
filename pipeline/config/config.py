@@ -13,7 +13,7 @@ class Paths:
     root: Path = ROOT_DIR
     raw_data: Path = ROOT_DIR / "data"
     cleaned_data: Path = ROOT_DIR / "cleaned_data"
-    engineered_data: Path = ROOT_DIR / "engineered_data"
+    engineered_data: Path = ROOT_DIR / "engineered_data_csv"
     artifacts: Path = ROOT_DIR / "artifacts"
     mlruns: Path = ROOT_DIR / "mlruns"
     splits: Path = engineered_data / "splits"
