@@ -14,6 +14,7 @@ import xgboost as xgb
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from pipeline.assets.engineered_data.engineered_data import engineer_features
 from pipeline.config import FEATURE_CONFIG, TRAINING_CONFIG
 
 MODEL_PATH = TRAINING_CONFIG.model_path
@@ -30,7 +31,7 @@ _model: Optional[xgb.XGBClassifier] = None
 
 class Telemetry(BaseModel):
     forklift_id: Optional[str] = Field(None, description="Identifier for the forklift.")
-    timestamp_ms: Optional[int] = Field(None, description="Epoch timestamp in milliseconds.")
+    timestamp_ms: int = Field(..., description="Epoch timestamp in milliseconds.")
     height: float = Field(..., description="Mast height in meters.")
     speed: float = Field(..., description="Speed in km/h.")
     on_duty: int = Field(..., ge=0, le=1, description="OnDuty flag (0 or 1).")
@@ -72,13 +73,22 @@ def _build_features(readings: list[Telemetry]) -> pd.DataFrame:
                 "Height": item.height,
                 "Speed": item.speed,
                 "OnDuty": int(item.on_duty),
+                "Timestamp": int(item.timestamp_ms),
+                "ForkliftID": item.forklift_id or "unknown",
             }
             for item in readings
         ]
     )
     base["Height_Speed_Interaction"] = base["Height"] * base["Speed"]
     base["Is_Moving"] = (base["Speed"] > FEATURE_CONFIG.moving_speed_threshold).astype(int)
-    return base[FEATURE_COLUMNS].fillna(0)
+
+    engineered = engineer_features(base, FEATURE_CONFIG)
+    # Ensure all expected columns are present for the model
+    for col in FEATURE_COLUMNS:
+        if col not in engineered.columns:
+            engineered[col] = 0.0
+
+    return engineered[FEATURE_COLUMNS].fillna(0)
 
 
 @app.get("/health")
