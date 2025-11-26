@@ -7,6 +7,7 @@ from pipeline.config.resources import (
     PreprocessingResource,
     TrainingResource,
 )
+from pipeline.assets.sensors import materialize_all_assets_job, raw_data_sensor
 
 from .assets import (
     cleaned_data_asset,
@@ -22,6 +23,8 @@ defs = Definitions(
         trained_model_asset,
         evaluated_model_asset,
     ],
+    jobs=[materialize_all_assets_job],
+    sensors=[raw_data_sensor],
     resources={
         "io_manager": fs_io_manager,
         "cleaning_settings": CleaningResource(),
